@@ -1,0 +1,191 @@
+service: wallboard-backend-${self:custom.variables.clientId}
+frameworkVersion: '3'
+
+provider:
+  name: aws
+  runtime: nodejs18.x
+  environment:
+    adminUsername: ${self:custom.variables.adminUsername}
+    adminEmail: ${self:custom.variables.adminEmail}
+    userPoolId: ${self:custom.variables.userPoolId}
+    userPoolClientId: ${self:custom.variables.userPoolClientId}
+    adminUserGroup: ${self:custom.variables.adminUserGroup}
+    guestUserGroup: ${self:custom.variables.guestUserGroup}
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - cognito-idp:AdminCreateUser
+            - cognito-idp:AdminAddUserToGroup
+            - cognito-idp:InitiateAuth
+            - cognito-idp:AdminRespondToAuthChallenge
+            - cognito-idp:ForgotPassword
+            - cognito-idp:ConfirmForgotPassword
+            - cognito-idp:AdminUpdateUserAttributes
+            - cognito-idp:AdminDeleteUser
+            - cognito-idp:ListUsersInGroup
+            - cognito-idp:AdminDisableUser
+            - cognito-idp:AdminEnableUser
+            - cognito-idp:ChangePassword
+          Resource:
+            Fn::GetAtt:
+              - UserPool
+              - Arn
+
+functions:
+  createAdminUser:
+    handler: src/postDeployScripts/createAdminUser.handler
+  customMessageTrigger:
+    handler: src/utils/customMessageTrigger.handler
+    events:
+      - cognitoUserPool:
+          pool: user-pool-wallboard-${self:custom.variables.clientId}
+          trigger: CustomMessage
+          existing: true
+          forceDeploy: true
+  login:
+    handler: src/api/login.handler
+    events:
+      - http:
+          path: /login
+          method: post
+          cors: true
+  changeInitialPassword:
+    handler: src/api/changeInitialPassword.handler
+    events:
+      - http:
+          path: /change-initial-password
+          method: post
+          cors: true
+  forgotPassword:
+    handler: src/api/forgotPassword.handler
+    events:
+      - http:
+          path: /forgot-password
+          method: post
+          cors: true
+  confirmForgotPassword:
+    handler: src/api/confirmForgotPassword.handler
+    events:
+      - http:
+          path: /confirm-forgot-password
+          method: post
+          cors: true
+  invite:
+    handler: src/api/invite.handler
+    events:
+      - http:
+          path: /invite
+          method: post
+          cors: true
+  listUsers:
+    handler: src/api/listUsers.handler
+    events:
+      - http:
+          path: /list-users
+          method: get
+          cors: true
+  deleteUser:
+    handler: src/api/deleteUser.handler
+    events:
+      - http:
+          path: /delete-user
+          method: delete
+          cors: true
+  enableUser:
+    handler: src/api/enableUser.handler
+    events:
+      - http:
+          path: /enable-user
+          method: post
+          cors: true
+  disableUser:
+    handler: src/api/disableUser.handler
+    events:
+      - http:
+          path: /disable-user
+          method: post
+          cors: true
+  changePassword:
+    handler: src/api/changePassword.handler
+    events:
+      - http:
+          path: /change-password
+          method: post
+          cors: true
+  getNewsData:
+    handler: src/api/getNewsData.handler
+    events:
+      - http:
+          path: /news-data
+          method: get
+          cors: true
+
+custom:
+  variables:
+    clientId: 1
+    userPoolId: { Ref: UserPool }
+    userPoolClientId: { Ref: UserPoolClient }
+    adminUsername: rkokeza
+    adminEmail: rokokokeza@gmail.com
+    adminUserGroup: AdminUserGroup-${self:custom.variables.clientId}
+    guestUserGroup: GuestUserGroup-${self:custom.variables.clientId}
+  scripts:
+    hooks:
+      'deploy:finalize': sls invoke -f createAdminUser
+
+plugins:
+  - serverless-plugin-scripts
+
+resources:
+  Resources:
+    UserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: user-pool-wallboard-${self:custom.variables.clientId}
+        Schema:
+          - Name: email
+            Required: true
+            Mutable: true
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+            RequireUppercase: true
+            RequireLowercase: true
+            RequireNumbers: true
+            RequireSymbols: true
+        AutoVerifiedAttributes: ["email"]
+        AliasAttributes: ["email"]
+        VerificationMessageTemplate:
+          DefaultEmailOption: CONFIRM_WITH_CODE
+          EmailSubject: 'Custom Wallboard Confirmation Code'
+          EmailMessage: 'Please use this confirmation code "{####}" to verify your requested action.'
+    
+    UserPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        ClientName: user-pool-client-wallboard-${self:custom.variables.clientId}
+        GenerateSecret: false
+        UserPoolId: ${self:custom.variables.userPoolId}
+        TokenValidityUnits:
+          AccessToken: minutes
+          IdToken: minutes
+          RefreshToken: hours
+        AccessTokenValidity: 30
+        IdTokenValidity: 30
+        RefreshTokenValidity: 12
+        ExplicitAuthFlows:
+          - "USER_PASSWORD_AUTH"
+    
+    AdminUserGroup:
+      Type: AWS::Cognito::UserPoolGroup
+      Properties:
+        GroupName: ${self:custom.variables.adminUserGroup}
+        UserPoolId: ${self:custom.variables.userPoolId}
+    
+    GuestUserGroup:
+      Type: AWS::Cognito::UserPoolGroup
+      Properties:
+        GroupName: ${self:custom.variables.guestUserGroup}
+        UserPoolId: ${self:custom.variables.userPoolId}
